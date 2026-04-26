@@ -39,30 +39,48 @@ client.on('message', async (msg) => {
 
     console.log(`[INCOMING] Received message from ${userNumber}: ${incomingText}`);
 
-    try {
-        // Send to n8n webhook
-        console.log(`[WEBHOOK] Sending POST request to n8n for user ${userNumber}...`);
-        const response = await axios.post(N8N_WEBHOOK_URL, {
-            message: incomingText,
-            user: userNumber
-        });
+    let attempt = 1;
+    let webhookSuccess = false;
 
-        // n8n should respond with { reply: "..." }
-        if (response.data && response.data.reply) {
-            const replyMessage = response.data.reply;
-            console.log(`[WEBHOOK] Received reply for user ${userNumber}. Adding to queue...`);
-            
-            // Queue the response
-            addMessageToQueue(userNumber, replyMessage);
-        } else {
-            console.log(`[WEBHOOK] No 'reply' field found in n8n response for user ${userNumber}.`);
-        }
+    while (attempt <= MAX_RETRIES && !webhookSuccess) {
+        try {
+            // Send to n8n webhook
+            console.log(`[WEBHOOK] Sending POST request to n8n for user ${userNumber} (Attempt ${attempt}/${MAX_RETRIES})...`);
+            const response = await axios.post(N8N_WEBHOOK_URL, {
+                message: incomingText,
+                user: userNumber
+            });
 
-    } catch (error) {
-        console.error(`[ERROR] Webhook call failed for user ${userNumber}:`, error.message);
-        if (error.response) {
-             console.error('[ERROR] Webhook Response Data:', error.response.data);
+            // n8n should respond with { reply: "..." }
+            if (response.data && response.data.reply) {
+                const replyMessage = response.data.reply;
+                console.log(`[WEBHOOK] Received reply for user ${userNumber}. Adding to queue...`);
+                
+                // Queue the response
+                addMessageToQueue(userNumber, replyMessage);
+                webhookSuccess = true;
+            } else {
+                console.log(`[WEBHOOK] No 'reply' field found in n8n response for user ${userNumber}.`);
+                attempt++;
+                if (attempt <= MAX_RETRIES) {
+                    await new Promise(resolve => setTimeout(resolve, QUEUE_DELAY_MS));
+                }
+            }
+
+        } catch (error) {
+            console.error(`[ERROR] Webhook call failed for user ${userNumber} on attempt ${attempt}:`, error.message);
+            if (error.response) {
+                 console.error('[ERROR] Webhook Response Data:', error.response.data);
+            }
+            attempt++;
+            if (attempt <= MAX_RETRIES) {
+                await new Promise(resolve => setTimeout(resolve, QUEUE_DELAY_MS));
+            }
         }
+    }
+
+    if (!webhookSuccess) {
+        console.error(`[ERROR] Max retries reached. Failed to get a valid reply from webhook for user ${userNumber}.`);
     }
 });
 
