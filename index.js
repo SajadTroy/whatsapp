@@ -31,8 +31,8 @@ client.on('ready', () => {
 });
 
 client.on('message', async (msg) => {
-    // Ignore status broadcasts and groups if needed, keeping it simple here
-    if (msg.isStatus) return;
+    // Ignore status broadcasts and group messages
+    if (msg.isStatus || msg.from.endsWith('@g.us')) return;
 
     const incomingText = msg.body;
     const userNumber = msg.from; // e.g. 1234567890@c.us
